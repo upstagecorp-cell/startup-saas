@@ -1,111 +1,200 @@
-# 🚀 Startup SaaS - Founder Diagnosis Platform
+# 🚀 Startup SaaS - AI Founder Diagnosis Platform
 
-AI 기반 창업 진단 및 실행 가이드 SaaS 플랫폼
-
----
-
-## 📌 프로젝트 개요
-
-이 프로젝트는 예비 창업자 및 초기 창업자를 대상으로
-현재 상태를 진단하고, 문제를 분석하며, 실행 가능한 액션을 제시하는 SaaS입니다.
+## 🧠 핵심 방향
+진단 → 원인 분석 → 실행 액션 → 재진단
 
 ---
 
-## 🧱 기술 스택
+## 📌 프로젝트 소개
+예비 창업자 및 초기 창업자를 대상으로  
+현재 상태를 진단하고, 실행 가능한 액션까지 연결하는 SaaS 플랫폼
 
-* Next.js (App Router)
-* TypeScript
-* Tailwind CSS
-* Supabase (Auth + Database)
+---
+
+## 🛠 기술 스택
+- Next.js (App Router)
+- TypeScript
+- Tailwind CSS
+- Supabase (Auth + Database + RLS)
 
 ---
 
 ## ✅ 현재 구현 상태
 
-### 🔐 Authentication
+### 인증
+- 회원가입 / 로그인
+- 이메일 인증
+- 세션 유지
+- 보호 라우팅 (/dashboard)
 
-* 회원가입 (Email / Password)
-* 이메일 인증 (Email confirmation)
-* 로그인
-* 세션 유지
-* 보호 라우팅 (/dashboard)
+### DB
+- 전체 스키마 설계 완료
+- RLS 정책 적용 완료
+- seed 데이터 입력 완료
+
+### 진단 기능
+- 진단 시작 → session 생성
+- 질문 순차 진행
+- 답변 저장 (diagnosis_answers)
+- 세션 상태 완료 처리
 
 ---
 
-## 📁 프로젝트 구조
+## ❗ 아직 미구현
 
-```
+- diagnosis 결과 계산 로직
+- 점수 산정 (section / overall)
+- 결과 UI
+- 액션 추천 시스템
+
+---
+
+## 🚧 다음 작업
+
+1. diagnosis_answers 기반 결과 계산 엔진
+2. diagnosis_results 생성
+3. diagnosis_result_dimensions 생성
+4. dashboard 결과 표시
+
+---
+
+## 📂 프로젝트 구조
 app/
-  ├─ login/
-  ├─ signup/
-  ├─ dashboard/
-  └─ (marketing)/
+login/
+signup/
+dashboard/
 
 components/
-  ├─ auth/
-  ├─ layout/
-  └─ ui/
+auth/
+ui/
+layout/
 
 lib/
-  └─ supabase/
-```
+supabase/
 
 ---
 
-## ⚙️ 환경 변수 (.env.local)
-
-```env
-NEXT_PUBLIC_SUPABASE_URL=YOUR_SUPABASE_URL
-NEXT_PUBLIC_SUPABASE_ANON_KEY=YOUR_SUPABASE_ANON_KEY
-```
-
----
-
-## 🚀 실행 방법
+## ⚙️ 실행 방법
 
 ```bash
 npm install
 npm run dev
-```
-
-브라우저에서 접속:
-
-```
-http://localhost:3000
-```
+NEXT_PUBLIC_SUPABASE_URL=YOUR_SUPABASE_URL
+NEXT_PUBLIC_SUPABASE_ANON_KEY=YOUR_SUPABASE_ANON_KEY
 
 ---
 
-## 🎯 앞으로 개발 계획
+# 2️⃣ PROJECT_CONTEXT.md (Codex + 개발용 핵심)
 
-### 1. 사용자 진단 시스템
+👉 이 파일이 제일 중요하다  
+👉 Codex는 이거 읽고 “구조 이해” 한다
 
-* 질문지 설계
-* 응답 저장
-* 상태 분석
-
-### 2. 결과 리포트 생성
-
-* 리스크 분석
-* 성장 단계 판단
-* 액션 추천
-
-### 3. Dashboard 확장
-
-* 진행 상태 표시
-* 실행 로그
-* 재진단 기능
+지금 너 상태 기준으로 **결과 엔진 단계로 업데이트해야 한다**
 
 ---
 
-## 💡 목표
+## 👉 복붙용 PROJECT_CONTEXT.md (업데이트 버전)
 
-단순한 정보 제공이 아니라
-**창업자의 실행을 직접 도와주는 AI SaaS 플랫폼 구축**
+```md
+# 🧠 Startup SaaS 프로젝트 상태
 
 ---
 
-## 👨‍💻 개발 상태
+## ✅ 현재 구현 완료
 
-현재 MVP가 아닌
-**즉시 사용 가능한 SaaS 수준으로 개발 진행 중**
+### 인증 시스템
+- Supabase Auth 연결
+- 회원가입 / 로그인
+- 이메일 인증
+- 세션 유지
+- 보호 라우팅 (/dashboard)
+
+---
+
+### 진단 흐름 (1단계 완료)
+
+- 진단 시작 버튼 → diagnosis_sessions 생성
+- founder_diagnosis 템플릿 기반 질문 로딩
+- 질문 순차 진행 (section 기반)
+- 답변 저장 (diagnosis_answers)
+- 모든 질문 완료 시 session 상태 → completed
+
+---
+
+## 📊 현재 DB 핵심 흐름
+auth.users
+→ profiles
+
+diagnosis_templates
+→ diagnosis_template_sections
+→ diagnosis_questions
+
+diagnosis_sessions
+→ diagnosis_answers
+
+---
+
+
+---
+
+## ❗ 현재 상태 요약
+
+👉 "데이터 수집 단계 완료"
+
+- 사용자 입력 데이터는 모두 정상 저장됨
+- 하지만 결과 해석 로직 없음
+
+---
+
+## 🚨 다음 핵심 단계 (중요)
+
+👉 "진단 결과 엔진 구현"
+
+---
+
+## 🎯 목표 흐름
+diagnosis_sessions
+→ diagnosis_answers
+→ diagnosis_results
+→ diagnosis_result_dimensions
+→ diagnosis_result_issues
+→ action_recommendations
+
+---
+
+## 📌 다음 작업 상세
+
+### 1. 결과 계산
+- answer 기반 점수 계산
+- section별 점수
+- overall_score 계산
+
+### 2. 결과 저장
+- diagnosis_results 생성
+- diagnosis_result_dimensions 생성
+
+### 3. 결과 표시
+- dashboard에서 결과 UI
+
+---
+
+## 🧠 설계 원칙
+
+- 초기 버전은 rule-based
+- AI는 이후 단계에서 추가
+- DB 구조 유지
+- 확장 가능한 구조 유지
+
+---
+
+## ⚠️ 주의사항
+
+- RLS 정책 유지
+- user_id 기반 접근 유지
+- 기존 흐름 깨지지 않도록 최소 수정
+
+---
+
+## 🚀 현재 개발 단계
+
+👉 Phase 2: 결과 계산 엔진 구현 단계
