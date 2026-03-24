@@ -2,7 +2,9 @@ import { redirect } from "next/navigation";
 
 import { createDiagnosisSession } from "@/app/dashboard/actions";
 import { DiagnosisFlow } from "@/components/dashboard/diagnosis-flow";
+import { DiagnosisResult } from "@/components/dashboard/diagnosis-result";
 import { Container } from "@/components/ui/container";
+import { getDiagnosisResult } from "@/lib/diagnosis/results";
 import { createSupabaseServerClient } from "@/lib/supabase/server";
 
 type SearchParams = Promise<{ session?: string }>;
@@ -122,6 +124,9 @@ export default async function DashboardPage({
     throw new Error("기존 답변을 불러오지 못했습니다.");
   }
 
+  const diagnosisResult =
+    diagnosisSession?.status === "completed" ? await getDiagnosisResult(diagnosisSession.id) : null;
+
   return (
     <Container className="py-16">
       <div className="mx-auto max-w-3xl rounded-[32px] border border-white/10 bg-slate-900/80 p-8 shadow-soft backdrop-blur">
@@ -138,19 +143,23 @@ export default async function DashboardPage({
 
       <div className="mx-auto mt-8 max-w-3xl">
         {diagnosisSession ? (
-          <DiagnosisFlow
-            answers={
-              answers?.map((answer) => ({
-                questionId: answer.question_id,
-                answerText: answer.answer_text,
-                answerNumber: answer.answer_number,
-                answerBoolean: answer.answer_boolean
-              })) ?? []
-            }
-            initialStatus={diagnosisSession.status}
-            questions={orderedQuestions}
-            sessionId={diagnosisSession.id}
-          />
+          diagnosisSession.status === "completed" && diagnosisResult ? (
+            <DiagnosisResult diagnosisResult={diagnosisResult} />
+          ) : (
+            <DiagnosisFlow
+              answers={
+                answers?.map((answer) => ({
+                  questionId: answer.question_id,
+                  answerText: answer.answer_text,
+                  answerNumber: answer.answer_number,
+                  answerBoolean: answer.answer_boolean
+                })) ?? []
+              }
+              initialStatus={diagnosisSession.status}
+              questions={orderedQuestions}
+              sessionId={diagnosisSession.id}
+            />
+          )
         ) : (
           <div className="rounded-[32px] border border-white/10 bg-slate-900/80 p-8 shadow-soft backdrop-blur">
             <p className="text-sm font-medium uppercase tracking-[0.2em] text-brand-300">Start Diagnosis</p>

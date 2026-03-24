@@ -3,6 +3,7 @@
 import { revalidatePath } from "next/cache";
 import { redirect } from "next/navigation";
 
+import { generateDiagnosisResult } from "@/lib/diagnosis/results";
 import { createSupabaseServerClient } from "@/lib/supabase/server";
 
 type SupportedQuestionType =
@@ -199,6 +200,10 @@ export async function submitDiagnosisAnswer({
     if (completeError) {
       throw new Error("진단 완료 상태를 저장하지 못했습니다.");
     }
+  }
+
+  if (isCompleted) {
+    await generateDiagnosisResult(sessionId);
   }
 
   revalidatePath("/dashboard");
