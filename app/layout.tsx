@@ -12,7 +12,7 @@ const inter = Inter({
 
 export const metadata: Metadata = {
   title: "Startup SaaS",
-  description: "AI diagnostic platform for aspiring and early-stage founders."
+  description: "예비 창업자와 초기 창업자를 위한 AI 기반 실행 진단 플랫폼입니다."
 };
 
 export default function RootLayout({

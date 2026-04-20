@@ -158,7 +158,7 @@ export function DiagnosisFlow({
         <p className="text-sm font-medium uppercase tracking-[0.2em] text-emerald-300">Diagnosis Complete</p>
         <h2 className="mt-4 text-3xl font-semibold text-white">진단이 완료되었습니다.</h2>
         <p className="mt-4 text-sm leading-7 text-slate-300">
-          모든 질문에 답변이 저장되었습니다. 이제 결과 분석과 액션 추천 단계를 연결할 수 있습니다.
+          모든 질문의 답변이 저장되었습니다. 이제 결과 분석과 실행 액션 추천 단계로 이동할 수 있습니다.
         </p>
         <button
           className="mt-8 rounded-full bg-white px-5 py-3 text-sm font-medium text-slate-950 transition hover:bg-slate-100"
@@ -201,7 +201,7 @@ export function DiagnosisFlow({
             <div className="grid gap-3 sm:grid-cols-2">
               {[
                 { label: "예", value: "true" },
-                { label: "아니오", value: "false" }
+                { label: "아니요", value: "false" }
               ].map((option) => (
                 <button
                   key={option.value}

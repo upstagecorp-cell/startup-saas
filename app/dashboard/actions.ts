@@ -22,11 +22,18 @@ interface SubmitDiagnosisAnswerInput {
   value: string;
 }
 
+interface UpdateResultActionInput {
+  actionId: string;
+  status: "todo" | "doing" | "done";
+  note?: string;
+  evidenceUrl?: string;
+}
+
 async function getAuthenticatedContext() {
   const supabase = await createSupabaseServerClient();
 
   if (!supabase) {
-    throw new Error("Supabase 환경변수를 확인해 주세요.");
+    throw new Error("Supabase 환경 변수를 확인해 주세요.");
   }
 
   const {
@@ -210,5 +217,67 @@ export async function submitDiagnosisAnswer({
 
   return {
     completed: isCompleted
+  };
+}
+
+export async function updateResultAction({ actionId, status, note, evidenceUrl }: UpdateResultActionInput) {
+  const { supabase, user } = await getAuthenticatedContext();
+  const normalizedNote = note?.trim() ?? null;
+  const normalizedEvidenceUrl = evidenceUrl?.trim() ?? null;
+  const { data: existingAction, error: existingActionError } = await supabase
+    .from("result_actions")
+    .select("id, result_id, status, started_at, completed_at")
+    .eq("id", actionId)
+    .eq("user_id", user.id)
+    .single();
+
+  if (existingActionError || !existingAction) {
+    throw new Error("실행 액션을 찾을 수 없습니다.");
+  }
+
+  const payload: {
+    status: "todo" | "doing" | "done";
+    note: string | null;
+    evidence_url: string | null;
+    started_at?: string | null;
+    completed_at?: string | null;
+  } = {
+    status,
+    note: normalizedNote,
+    evidence_url: normalizedEvidenceUrl
+  };
+
+  if (status === "doing" && existingAction.status !== "doing") {
+    payload.started_at = existingAction.started_at ?? new Date().toISOString();
+    payload.completed_at = null;
+  }
+
+  if (status === "done" && existingAction.status !== "done") {
+    payload.started_at = existingAction.started_at ?? new Date().toISOString();
+    payload.completed_at = new Date().toISOString();
+  }
+
+  if (status === "todo") {
+    payload.started_at = null;
+    payload.completed_at = null;
+  }
+
+  const { data: action, error: actionError } = await supabase
+    .from("result_actions")
+    .update(payload)
+    .eq("id", actionId)
+    .eq("user_id", user.id)
+    .select("id, result_id")
+    .single();
+
+  if (actionError || !action) {
+    throw new Error("실행 액션 상태를 업데이트하지 못했습니다.");
+  }
+
+  revalidatePath("/dashboard");
+
+  return {
+    actionId: action.id,
+    resultId: action.result_id
   };
 }

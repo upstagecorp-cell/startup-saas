@@ -17,7 +17,7 @@ export default async function DashboardPage({
   const supabase = await createSupabaseServerClient();
 
   if (!supabase) {
-    throw new Error("Supabase 환경변수를 확인해 주세요.");
+    throw new Error("Supabase 환경 변수를 확인해 주세요.");
   }
 
   const {
@@ -130,10 +130,10 @@ export default async function DashboardPage({
   return (
     <Container className="py-16">
       <div className="mx-auto max-w-3xl rounded-[32px] border border-white/10 bg-slate-900/80 p-8 shadow-soft backdrop-blur">
-        <p className="text-sm font-medium uppercase tracking-[0.2em] text-brand-300">Dashboard</p>
+        <p className="text-sm font-medium uppercase tracking-[0.2em] text-brand-300">대시보드</p>
         <h1 className="mt-4 text-3xl font-semibold text-white">창업 진단을 시작할 준비가 되었습니다.</h1>
         <p className="mt-4 text-slate-300">
-          현재 로그인한 이메일은 <span className="font-medium text-white">{user.email}</span> 입니다.
+          현재 로그인한 이메일은 <span className="font-medium text-white">{user.email}</span>입니다.
         </p>
         <div className="mt-8 rounded-2xl border border-white/10 bg-slate-950/70 p-5 text-sm leading-7 text-slate-300">
           진단 템플릿 <span className="font-medium text-white">{activeTemplate.name}</span> v
@@ -162,10 +162,10 @@ export default async function DashboardPage({
           )
         ) : (
           <div className="rounded-[32px] border border-white/10 bg-slate-900/80 p-8 shadow-soft backdrop-blur">
-            <p className="text-sm font-medium uppercase tracking-[0.2em] text-brand-300">Start Diagnosis</p>
-            <h2 className="mt-4 text-3xl font-semibold text-white">첫 진단 세션을 시작하세요.</h2>
+            <p className="text-sm font-medium uppercase tracking-[0.2em] text-brand-300">진단 시작</p>
+            <h2 className="mt-4 text-3xl font-semibold text-white">새 진단 세션을 시작하세요.</h2>
             <p className="mt-4 text-sm leading-7 text-slate-300">
-              버튼을 누르면 새로운 진단 세션이 생성되고, 질문이 한 개씩 표시됩니다.
+              버튼을 누르면 새 진단 세션을 생성하고, 질문을 한 개씩 표시합니다.
             </p>
             <form action={createDiagnosisSession} className="mt-8">
               <button

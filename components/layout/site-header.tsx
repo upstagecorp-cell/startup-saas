@@ -4,10 +4,7 @@ import { LogoutButton } from "@/components/auth/logout-button";
 import { Container } from "@/components/ui/container";
 import { createSupabaseServerClient } from "@/lib/supabase/server";
 
-const navItems = [
-  { href: "#foundation", label: "Foundation" },
-  { href: "#next-steps", label: "Roadmap" }
-];
+const navItems = [{ href: "#workflow", label: "작동 방식" }];
 
 export async function SiteHeader() {
   const supabase = await createSupabaseServerClient();
@@ -18,7 +15,7 @@ export async function SiteHeader() {
   return (
     <header className="sticky top-0 z-30 border-b border-white/10 bg-slate-950/75 backdrop-blur">
       <Container className="flex h-16 items-center justify-between">
-        <Link href="/" className="text-sm font-semibold tracking-[0.24em] text-white uppercase">
+        <Link href="/" className="text-sm font-semibold uppercase tracking-[0.24em] text-white">
           Startup SaaS
         </Link>
 
@@ -37,7 +34,7 @@ export async function SiteHeader() {
                 className="rounded-full border border-white/10 px-4 py-2 text-sm text-slate-200 transition hover:border-white/20 hover:bg-white/5"
                 href="/dashboard"
               >
-                Dashboard
+                대시보드
               </Link>
               <LogoutButton />
             </div>

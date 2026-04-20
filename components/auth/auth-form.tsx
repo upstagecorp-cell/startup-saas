@@ -24,7 +24,7 @@ const formCopy = {
   },
   signup: {
     title: "회원가입",
-    description: "간단히 계정을 만들고 바로 사용할 준비를 합니다.",
+    description: "간단한 계정을 만들고 바로 진단을 시작할 수 있습니다.",
     submitLabel: "회원가입",
     alternateHref: "/login" as Route,
     alternateLabel: "로그인",
@@ -62,7 +62,7 @@ export function AuthForm({ mode }: AuthFormProps) {
     let redirectPath: Route | null = null;
 
     if (!supabase) {
-      setError("Supabase 환경변수를 확인해 주세요.");
+      setError("Supabase 환경 변수를 확인해 주세요.");
       setIsSubmitting(false);
       return;
     }
@@ -125,7 +125,7 @@ export function AuthForm({ mode }: AuthFormProps) {
       const message =
         caughtError instanceof Error
           ? caughtError.message
-          : "회원가입 요청 중 네트워크 오류가 발생했습니다.";
+          : "요청 중 네트워크 오류가 발생했습니다.";
 
       if (mode === "login") {
         console.error("Login request threw an error:", caughtError);
