@@ -1,9 +1,12 @@
-import type { PostgrestError } from "@supabase/supabase-js";
+import type { PostgrestError, SupabaseClient } from "@supabase/supabase-js";
 
 import { createSupabaseServerClient } from "@/lib/supabase/server";
 import { generateAndPersistDiagnosisArtifacts } from "@/lib/diagnosis/artifacts";
 import {
+  buildResultActionFeedback,
   generateResultActionsFromRecommendations,
+  getLatestCompletedResultAction,
+  getPrimaryResultAction,
   getResultActionsForResult,
   type ResultActionFeedbackSummary,
   type ResultActionView
@@ -42,6 +45,22 @@ type PersistDimensionRow = {
   status: "strong" | "moderate" | "weak" | "critical" | null;
   summary: string | null;
   sort_order: number;
+};
+
+type PersistedDimensionRow = {
+  dimension_key: string;
+  dimension_name: string;
+  score: number | null;
+  status: string | null;
+  sort_order: number;
+};
+
+type FallbackActionContent = {
+  title: string;
+  description: string;
+  rationale: string;
+  completionGuide: string;
+  evidenceGuide: string;
 };
 
 export interface DiagnosisIssueCauseView {
@@ -112,6 +131,9 @@ export interface DiagnosisComparisonView {
 export interface DiagnosisResultView {
   result: {
     overall_score: number | null;
+    previous_score: number | null;
+    delta: number | null;
+    change: "improved" | "unchanged" | "declined";
     risk_level: string | null;
     recommended_next_step: string | null;
   };
@@ -119,6 +141,9 @@ export interface DiagnosisResultView {
     dimension_key: string;
     dimension_name: string;
     score: number | null;
+    previous_score: number | null;
+    delta: number | null;
+    change: "improved" | "unchanged" | "declined";
     status: string | null;
     summary: string | null;
     sort_order: number;
@@ -127,6 +152,8 @@ export interface DiagnosisResultView {
   recommendations: DiagnosisRecommendationView[];
   actions: ResultActionView[];
   feedback: ResultActionFeedbackSummary;
+  primary_action: ResultActionView | null;
+  primary_action_feedback: string | null;
   comparison_context: {
     current_result_id: string;
     previous_result_id: string | null;
@@ -148,7 +175,38 @@ function normalizeObject(value: unknown) {
 }
 
 function isArtifactSchemaUnavailableError(error: PostgrestError | null) {
-  return error?.code === "42P01" || error?.code === "42703" || error?.code === "PGRST204";
+  if (!error) {
+    return false;
+  }
+
+  const message = [error.message, error.details, error.hint].filter(Boolean).join(" ").toLowerCase();
+
+  return (
+    error.code === "42P01" ||
+    error.code === "42703" ||
+    error.code === "PGRST200" ||
+    error.code === "PGRST201" ||
+    error.code === "PGRST202" ||
+    error.code === "PGRST204" ||
+    message.includes("schema cache") ||
+    message.includes("could not find") ||
+    message.includes("does not exist") ||
+    message.includes("column") ||
+    message.includes("relation")
+  );
+}
+
+function warnSkippedArtifactLoad(label: string, error: PostgrestError | null) {
+  if (!error) {
+    return;
+  }
+
+  console.warn(`Diagnosis artifact ${label} load skipped.`, {
+    code: error.code,
+    message: error.message,
+    details: error.details,
+    hint: error.hint
+  });
 }
 
 function roundToTwo(value: number) {
@@ -254,6 +312,220 @@ function buildDimensionRows(sectionScores: SectionScoreResult[]): PersistDimensi
     summary: buildSectionSummary(sectionScore),
     sort_order: sectionScore.sortOrder
   }));
+}
+
+function computeFallbackDueDate(priority: string) {
+  const date = new Date();
+  date.setDate(date.getDate() + (priority === "high" ? 3 : 7));
+
+  return date.toISOString().slice(0, 10);
+}
+
+function buildFallbackActionContent(dimension: PersistedDimensionRow): FallbackActionContent {
+  const key = dimension.dimension_key.toLowerCase();
+  const name = dimension.dimension_name;
+
+  if (
+    key.includes("market") ||
+    key.includes("customer") ||
+    key.includes("validation") ||
+    key.includes("problem")
+  ) {
+    return {
+      title: "시장 검증: 고객 문제 3개 확인하기",
+      description:
+        "현재 가장 약한 영역은 시장 검증입니다. 오늘 고객이 실제로 겪는 문제 3가지를 적고, 그중 가장 자주 반복되는 문제 1개를 선택하세요.",
+      rationale: "시장 검증 점수가 낮으면 제품을 만들기 전에 해결할 고객 문제가 명확하지 않을 가능성이 큽니다.",
+      completionGuide: "고객 문제 3개와 우선순위 1개를 기록하면 완료입니다.",
+      evidenceGuide: "고객 인터뷰 메모, 설문 결과, 카카오톡/DM 캡처, 노션 정리 링크"
+    };
+  }
+
+  if (
+    key.includes("product") ||
+    key.includes("fit") ||
+    key.includes("solution") ||
+    key.includes("mvp")
+  ) {
+    return {
+      title: "제품 적합성: 핵심 해결 기능 1개 정하기",
+      description:
+        "현재 가장 약한 영역은 제품 적합성입니다. 고객 문제를 해결하는 데 가장 중요한 기능 1개를 정하고, 불필요한 기능은 제외하세요.",
+      rationale: "제품 적합성 점수가 낮으면 사용자가 왜 이 제품을 써야 하는지 명확하지 않을 가능성이 큽니다.",
+      completionGuide: "핵심 기능 1개와 제외할 기능 2개를 기록하면 완료입니다.",
+      evidenceGuide: "기능 목록, MVP 화면 초안, 사용자 피드백 문서"
+    };
+  }
+
+  if (
+    key.includes("execution") ||
+    key.includes("operation") ||
+    key.includes("team") ||
+    key.includes("ops")
+  ) {
+    return {
+      title: "실행 역량: 가장 큰 실행 장애물 1개 제거하기",
+      description:
+        "현재 가장 약한 영역은 실행 역량입니다. 지금 실행을 막고 있는 장애물 3개를 적고, 이번 주 안에 제거할 장애물 1개를 선택하세요.",
+      rationale: "실행 역량 점수가 낮으면 아이디어보다 실제 행동과 검증 속도가 부족할 가능성이 큽니다.",
+      completionGuide: "실행 장애물 3개와 이번 주 해결할 장애물 1개를 기록하면 완료입니다.",
+      evidenceGuide: "실행 체크리스트, 작업 로그, 캘린더 일정, 완료 캡처"
+    };
+  }
+
+  return {
+    title: `${name}: 첫 개선 액션 정하기`,
+    description: `현재 가장 약한 영역은 ${name}입니다. 이 영역을 개선하기 위해 오늘 실행할 수 있는 행동 1개를 정하고 기록하세요.`,
+    rationale: "가장 낮은 점수 영역부터 개선하면 다음 재진단에서 변화가 가장 잘 드러납니다.",
+    completionGuide: "오늘 실행할 행동 1개와 완료 기준 1개를 기록하면 완료입니다.",
+    evidenceGuide: "메모, 문서 링크, 실행 기록"
+  };
+}
+
+function buildEnrichedFallbackDescription({
+  content,
+  dimension
+}: {
+  content: FallbackActionContent;
+  dimension: PersistedDimensionRow;
+}) {
+  const scoreLabel = dimension.score === null ? "미측정" : `${Math.round(dimension.score)}점`;
+  const statusLabel = dimension.status ?? "미정";
+
+  return [
+    `약한 영역: ${dimension.dimension_name} (${scoreLabel}, ${statusLabel})`,
+    `실행 방법: ${content.description}`,
+    `완료 기준: ${content.completionGuide}`,
+    `증거 예시: ${content.evidenceGuide}`
+  ].join("\n\n");
+}
+
+async function forceFallbackExecutionAction({
+  supabase,
+  resultId,
+  userId
+}: {
+  supabase: SupabaseClient;
+  resultId: string;
+  userId: string;
+}) {
+  try {
+    console.log("FORCED FALLBACK TRIGGERED", resultId);
+
+    const { data: dimensions, error: dimensionsError } = await supabase
+      .from("diagnosis_result_dimensions")
+      .select("dimension_key, dimension_name, score, status, sort_order")
+      .eq("result_id", resultId)
+      .order("sort_order", { ascending: true });
+
+    if (dimensionsError) {
+      console.error("FALLBACK DIMENSIONS LOAD FAILED", dimensionsError);
+      return { recommendationCount: 0, actionCount: 0, dimensionCount: 0, created: false };
+    }
+
+    const dimensionRows = (dimensions ?? []) as PersistedDimensionRow[];
+    const targetDimension = dimensionRows.slice().sort((left, right) => {
+      const leftScore = left.score ?? 101;
+      const rightScore = right.score ?? 101;
+
+      return leftScore - rightScore;
+    })[0] ?? {
+      dimension_key: "diagnosis",
+      dimension_name: "진단 결과",
+      score: null,
+      status: null,
+      sort_order: 0
+    };
+
+    const priority = targetDimension.score !== null && targetDimension.score < 40 ? "high" : "medium";
+    const content = buildFallbackActionContent(targetDimension);
+    const title = content.title;
+    const description = buildEnrichedFallbackDescription({
+      content,
+      dimension: targetDimension
+    });
+    const recommendationPayload = {
+      result_id: resultId,
+      user_id: userId,
+      recommendation_type: "operations",
+      title,
+      description,
+      rationale: content.rationale,
+      priority,
+      expected_impact: "Improve the weakest diagnosis area first.",
+      effort_level: "low",
+      source_type: "manual",
+      source_ref: targetDimension.dimension_key,
+      recommendation_version: 1,
+      is_selected: false
+    };
+    const { data: recommendation, error: recommendationError } = await supabase
+      .from("action_recommendations")
+      .insert(recommendationPayload)
+      .select("id")
+      .single();
+
+    if (recommendationError || !recommendation) {
+      console.error("FALLBACK RECOMMENDATION INSERT FAILED", {
+        payload: recommendationPayload,
+        code: recommendationError?.code,
+        message: recommendationError?.message,
+        details: recommendationError?.details,
+        hint: recommendationError?.hint
+      });
+      return {
+        recommendationCount: 0,
+        actionCount: 0,
+        dimensionCount: dimensionRows.length,
+        created: false
+      };
+    }
+
+    const resultActionPayload = {
+      user_id: userId,
+      diagnosis_result_id: resultId,
+      action_recommendation_id: recommendation.id,
+      title,
+      description,
+      priority,
+      status: "todo",
+      due_date: computeFallbackDueDate(priority)
+    };
+    const { error: actionError } = await supabase.from("result_actions").insert(resultActionPayload);
+
+    if (actionError) {
+      console.error("FALLBACK RESULT_ACTION INSERT FAILED", {
+        payload: resultActionPayload,
+        code: actionError.code,
+        message: actionError.message,
+        details: actionError.details,
+        hint: actionError.hint
+      });
+      return {
+        recommendationCount: 1,
+        actionCount: 0,
+        dimensionCount: dimensionRows.length,
+        created: false
+      };
+    }
+
+    console.log("FORCED FALLBACK CREATED", {
+      resultId,
+      dimensionCount: dimensionRows.length,
+      recommendationId: recommendation.id,
+      resultActionsCreatedCount: 1
+    });
+
+    return {
+      recommendationCount: 1,
+      actionCount: 1,
+      dimensionCount: dimensionRows.length,
+      created: true
+    };
+  } catch (error) {
+    console.error("FALLBACK ACTION FAILED", error);
+    return { recommendationCount: 0, actionCount: 0, dimensionCount: 0, created: false };
+  }
 }
 
 export async function generateDiagnosisResult(sessionId: string) {
@@ -446,6 +718,21 @@ export async function generateDiagnosisResult(sessionId: string) {
     artifactGenerationResult
   });
 
+  const forcedFallbackResult = await forceFallbackExecutionAction({
+    supabase,
+    resultId,
+    userId: user.id
+  });
+
+  console.log("generateDiagnosisResult forced fallback prepared", {
+    sessionId: session.id,
+    resultId,
+    dimensionCount: forcedFallbackResult.dimensionCount,
+    fallbackRecommendationCreated: forcedFallbackResult.created,
+    resultActionsCreatedCount: forcedFallbackResult.actionCount,
+    forcedFallbackResult
+  });
+
   const actionGenerationResult = await generateResultActionsFromRecommendations({
     supabase,
     resultId,
@@ -457,6 +744,7 @@ export async function generateDiagnosisResult(sessionId: string) {
     resultId,
     actionGenerationResult
   });
+  console.log("RESULT COMPLETE", resultId);
 
   return {
     resultId,
@@ -554,17 +842,15 @@ export async function getDiagnosisResult(sessionId: string): Promise<DiagnosisRe
     isArtifactSchemaUnavailableError(causesResponse.error) ||
     isArtifactSchemaUnavailableError(recommendationsResponse.error);
 
-  if (
-    (issuesResponse.error && !isArtifactSchemaUnavailableError(issuesResponse.error)) ||
-    (causesResponse.error && !isArtifactSchemaUnavailableError(causesResponse.error)) ||
-    (recommendationsResponse.error && !isArtifactSchemaUnavailableError(recommendationsResponse.error))
-  ) {
-    throw new Error("Diagnosis artifacts could not be loaded.");
+  if (issuesResponse.error || causesResponse.error || recommendationsResponse.error) {
+    warnSkippedArtifactLoad("issues", issuesResponse.error);
+    warnSkippedArtifactLoad("causes", causesResponse.error);
+    warnSkippedArtifactLoad("recommendations", recommendationsResponse.error);
   }
 
   const causesByIssueId = new Map<string, DiagnosisIssueCauseView[]>();
 
-  if (!artifactSchemaUnavailable) {
+  if (!artifactSchemaUnavailable && !causesResponse.error) {
     for (const cause of causesResponse.data ?? []) {
       const issueCauses = causesByIssueId.get(cause.issue_id) ?? [];
 
@@ -580,7 +866,7 @@ export async function getDiagnosisResult(sessionId: string): Promise<DiagnosisRe
     }
   }
 
-  const issues: DiagnosisIssueView[] = artifactSchemaUnavailable
+  const issues: DiagnosisIssueView[] = artifactSchemaUnavailable || issuesResponse.error
     ? []
     : (issuesResponse.data ?? []).map((issue) => ({
         id: issue.id,
@@ -596,7 +882,7 @@ export async function getDiagnosisResult(sessionId: string): Promise<DiagnosisRe
         causes: causesByIssueId.get(issue.id) ?? []
       }));
   const issueKeyById = new Map(issues.map((issue) => [issue.id, issue.issue_key]));
-  const recommendations: DiagnosisRecommendationView[] = artifactSchemaUnavailable
+  const recommendations: DiagnosisRecommendationView[] = artifactSchemaUnavailable || recommendationsResponse.error
     ? []
     : (recommendationsResponse.data ?? []).map((recommendation) => ({
         id: recommendation.id,
@@ -616,6 +902,8 @@ export async function getDiagnosisResult(sessionId: string): Promise<DiagnosisRe
     resultId: result.id,
     userId: user.id
   });
+  const primaryAction = getPrimaryResultAction(resultActionsState.actions);
+  const latestCompletedPrimaryAction = getLatestCompletedResultAction(resultActionsState.actions);
   const { data: recentResults, error: recentResultsError } = await supabase
     .from("diagnosis_results")
     .select("id, session_id, overall_score, risk_level, created_at")
@@ -637,6 +925,18 @@ export async function getDiagnosisResult(sessionId: string): Promise<DiagnosisRe
     })) ?? [];
   const previousResult = recentResultRows.find((recentResult) => recentResult.result_id !== result.id) ?? null;
   let comparison: DiagnosisComparisonView | null = null;
+  let comparedDimensions: DiagnosisDimensionComparisonView[] = dimensionRows.map((dimension) => ({
+    dimension_key: dimension.dimension_key,
+    dimension_name: dimension.dimension_name,
+    current_score: dimension.score,
+    previous_score: null,
+    score_diff: null,
+    current_status: dimension.status,
+    previous_status: null,
+    change: "unchanged"
+  }));
+  let overallScoreDelta: number | null = null;
+  let overallChange = classifyScoreChange(result.overall_score, null);
 
   if (previousResult) {
     const { data: previousDimensions, error: previousDimensionsError } = await supabase
@@ -655,7 +955,7 @@ export async function getDiagnosisResult(sessionId: string): Promise<DiagnosisRe
     const currentDimensionKeys = new Set(dimensionRows.map((dimension) => dimension.dimension_key));
     const previousOnlyDimensions =
       previousDimensions?.filter((dimension) => !currentDimensionKeys.has(dimension.dimension_key)) ?? [];
-    const comparedDimensions: DiagnosisDimensionComparisonView[] = [
+    comparedDimensions = [
       ...dimensionRows.map((dimension) => {
         const previousDimension = previousDimensionByKey.get(dimension.dimension_key);
         const previousScore = previousDimension?.score ?? null;
@@ -686,7 +986,11 @@ export async function getDiagnosisResult(sessionId: string): Promise<DiagnosisRe
         change: "unchanged" as const
       }))
     ];
-    const overallChange = classifyScoreChange(result.overall_score, previousResult.overall_score);
+    overallScoreDelta =
+      result.overall_score !== null && previousResult.overall_score !== null
+        ? roundToTwo(result.overall_score - previousResult.overall_score)
+        : null;
+    overallChange = classifyScoreChange(result.overall_score, previousResult.overall_score);
 
     comparison = {
       current_result_id: result.id,
@@ -695,10 +999,7 @@ export async function getDiagnosisResult(sessionId: string): Promise<DiagnosisRe
       previous_session_id: previousResult.session_id,
       current_overall_score: result.overall_score,
       previous_overall_score: previousResult.overall_score,
-      overall_score_diff:
-        result.overall_score !== null && previousResult.overall_score !== null
-          ? roundToTwo(result.overall_score - previousResult.overall_score)
-          : null,
+      overall_score_diff: overallScoreDelta,
       current_overall_status: result.risk_level,
       previous_overall_status: previousResult.risk_level,
       overall_change: overallChange,
@@ -708,18 +1009,36 @@ export async function getDiagnosisResult(sessionId: string): Promise<DiagnosisRe
       declined_dimensions: comparedDimensions.filter((dimension) => dimension.change === "declined")
     };
   }
+  const comparisonByDimensionKey = new Map(
+    comparedDimensions.map((dimension) => [dimension.dimension_key, dimension])
+  );
+  const enrichedDimensionRows = dimensionRows.map((dimension) => {
+    const dimensionComparison = comparisonByDimensionKey.get(dimension.dimension_key);
+
+    return {
+      ...dimension,
+      previous_score: dimensionComparison?.previous_score ?? null,
+      delta: dimensionComparison?.score_diff ?? null,
+      change: dimensionComparison?.change ?? ("unchanged" as const)
+    };
+  });
 
   return {
     result: {
       overall_score: result.overall_score,
+      previous_score: previousResult?.overall_score ?? null,
+      delta: overallScoreDelta,
+      change: overallChange,
       risk_level: result.risk_level,
       recommended_next_step: result.recommended_next_step
     },
-    dimensions: dimensionRows,
+    dimensions: enrichedDimensionRows,
     issues,
     recommendations,
     actions: resultActionsState.actions,
     feedback: resultActionsState.feedback,
+    primary_action: primaryAction,
+    primary_action_feedback: buildResultActionFeedback(latestCompletedPrimaryAction),
     comparison_context: {
       current_result_id: result.id,
       previous_result_id: previousResult?.result_id ?? null,

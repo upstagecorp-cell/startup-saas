@@ -1,108 +1,45 @@
-# Diagnosis Artifacts And Result Actions Checklist
+# Diagnosis And Execution Checklist
 
-이 문서는 현재 MVP의 artifact 및 실행 액션 레이어를 검증하기 위한 체크리스트입니다.
+현재 MVP 검증용 체크리스트.
 
-## Current Status
+## Core
 
-Implemented:
+- `business_type`이 첫 질문으로 표시됨
+- `short_text`, `long_text`는 저장되지만 점수 제외
+- 모든 필수 질문 답변 후 `diagnosis_results` 생성
+- `diagnosis_result_dimensions` 생성
 
-- `diagnosis_result_issues`
-- `diagnosis_result_issue_causes`
-- `action_recommendations`
-- `result_actions`
-- `persist_diagnosis_artifacts`
-- dashboard issue/cause/recommendation display
-- dashboard result action display/update
+## Fallback Recommendation
 
-Not implemented yet:
+결과 생성 후 확인:
 
-- `diagnosis_result_insights` 생성/표시
-- `action_plans` 기반 plan UI
-- `action_tasks` 기반 task UI
-- 관리자 검토/수정
-- 결제 gate
+- `action_recommendations` 최소 1개 생성
+- 추천이 없으면 fallback recommendation 강제 생성
+- fallback은 가장 약한 dimension을 기준으로 생성
 
-## Guardrails
+## Result Actions
 
-- `app/dashboard/actions.ts -> generateDiagnosisResult() -> persist_diagnosis_result` 흐름을 유지합니다.
-- Artifact generation은 core result persistence 이후의 post-processing layer입니다.
-- `short_text`, `long_text`는 scoring하지 않습니다.
-- 현재 active execution layer는 `result_actions`입니다.
-- `action_plans/action_tasks`를 active execution layer로 취급하지 않습니다.
-- Artifact schema 또는 seed가 없는 환경에서도 core result screen은 표시되어야 합니다.
+확인:
 
-## 1. Migration Check
+- `result_actions` 최소 1개 생성
+- `diagnosis_result_id`가 현재 결과를 가리킴
+- `action_recommendation_id`가 추천 액션을 가리킴
+- `status = todo`
+- `due_date` 설정됨
 
-필요 객체:
+## Dashboard
 
-- `diagnosis_issue_definitions`
-- `diagnosis_issue_cause_definitions`
-- `diagnosis_action_templates`
-- `diagnosis_result_issue_causes`
-- `result_actions`
-- `persist_diagnosis_artifacts`
+확인:
 
-관련 migration:
+- 결과 페이지 렌더링
+- Primary Action 표시
+- 추천 실행 액션 표시
+- note 저장
+- evidence URL 저장
+- 완료 상태 업데이트
 
-- `supabase/migrations/20260417_add_diagnosis_artifact_rules_and_rpc.sql`
-- `supabase/migrations/20260417_add_result_actions.sql`
+## 현재 한계
 
-## 2. Core Result Check
-
-진단 완료 후 아래가 생성되어야 합니다.
-
-- `diagnosis_results`
-- `diagnosis_result_dimensions`
-
-이 단계는 artifact/result action schema와 무관하게 동작해야 합니다.
-
-## 3. Artifact Check
-
-seed와 rule이 맞으면 아래가 생성됩니다.
-
-- `diagnosis_result_issues`
-- `diagnosis_result_issue_causes`
-- `action_recommendations`
-
-검증 SQL:
-
-- `docs/diagnosis-artifacts-manual-verification.sql`
-
-## 4. Result Actions Check
-
-`action_recommendations`가 존재하면 `result_actions`가 생성되어야 합니다.
-
-확인 항목:
-
-- `result_actions.result_id`
-- `result_actions.recommendation_id`
-- `result_actions.status`
-- `result_actions.title`
-- `result_actions.due_date`
-
-대시보드에서 확인할 항목:
-
-- 전체 액션 수
-- 진행 중 액션 수
-- 완료 액션 수
-- 완료율
-- 메모
-- evidence URL
-
-## 5. Re-diagnosis Check
-
-액션을 완료하거나 완료율이 기준에 도달하면 재진단 CTA가 표시됩니다.
-
-재진단 후 결과 화면에서 확인할 항목:
-
-- 현재 점수
-- 이전 점수
-- 점수 변화
-- 개선/유지/하락 dimension
-
-## Expected MVP Behavior
-
-- issue/cause/recommendation이 없으면 추천 섹션은 비어 있어도 dashboard는 깨지지 않습니다.
-- recommendation이 없으면 `result_actions` 생성은 skip됩니다.
-- `result_actions`가 없으면 실행 목록은 empty state를 보여줍니다.
-- `action_plans/action_tasks`는 현재 표시되지 않습니다.
+- 추천 품질은 fallback 중심
+- Stripe 결제 미연동
+- 고급 추천 로직 없음

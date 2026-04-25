@@ -1,98 +1,87 @@
 # Project Context
 
-현재 프로젝트는 예비 창업자와 초기 창업자를 위한 AI 기반 창업 진단 및 실행 SaaS MVP입니다.
+This project is an AI-based startup diagnosis and execution MVP for early founders.
 
 ## Product Direction
 
-핵심 방향:
-
 ```text
-진단 -> 원인 분석 -> 실행 액션 -> 기록 -> 재진단
+diagnosis -> analysis -> action -> record -> re-diagnosis
 ```
 
-현재 제품은 plan-based SaaS가 아니라, 진단 결과에서 `result_actions`를 생성해 실행 기록을 받는 MVP입니다.
+The current product is not a plan-based execution system.
+It creates `result_actions` from diagnosis results and uses those actions as the single execution loop.
 
-## Implemented
-
-- Supabase Auth
-- 회원가입/로그인
-- 세션 유지
-- `/dashboard` 보호 라우팅
-- 진단 세션 생성
-- 질문 순차 진행
-- 답변 저장
-- 세션 완료 처리
-- rule-based scoring
-- 결과 저장 RPC
-- dimension 결과 저장
-- issue/cause/recommendation artifact 생성
-- `result_actions` 생성
-- 액션 상태 변경
-- 액션 메모/evidence 저장
-- 결과 UI
-- 재진단 비교
-- Korean mojibake source scan
-- production build 통과
-
-## Current Active Execution Model
-
-현재 active execution layer:
-
-- `result_actions`
-
-현재 active recommendation layer:
-
-- `action_recommendations`
-
-실제 흐름:
+## Current Diagnosis Flow
 
 ```text
-diagnosis_result
+diagnosis_sessions
+-> diagnosis_answers
+-> completed
+-> generateDiagnosisResult
+-> diagnosis_results
 -> diagnosis_result_issues
 -> diagnosis_result_issue_causes
 -> action_recommendations
 -> result_actions
--> user status/note/evidence
+-> dashboard
 ```
 
-`action_plans`, `action_tasks`, `action_execution_logs`는 초기 schema에 존재하지만 현재 구현된 UI/server action flow에서는 사용하지 않습니다.
+## Business Type Branching
 
-## Not Implemented Yet
+The first required diagnosis question is `business_type`.
 
-- Stripe 결제
-- `purchases`
-- paid gate
-- `/admin`
-- `coach_notes`
-- 관리자 플랜/액션 수정
-- `action_plans/action_tasks` 기반 실행 화면
-- 템플릿 URL/완료 기준/산출물 관리
-- analytics funnel tracking
-- AI 기반 개인화 추천
+- `online`
+- `offline`
 
-## Routing Constraint
+`business_type` is context-only.
 
-`app/page.tsx`가 유일한 `/` route입니다.
+- required for branching
+- excluded from scoring
+- not mapped to any diagnosis dimension
 
-route group 안에 또 다른 `page.tsx`를 만들어 `/`를 중복 소유하지 않습니다.
+### Online
 
-## Build Status
+`online` uses the existing online checklist.
 
-현재 production build는 통과합니다.
+### Offline
 
-검증:
+`offline` uses offline-only follow-up questions covering:
 
-```bash
-npm.cmd run typecheck
-npm.cmd run check:encoding
-npm.cmd run build
-```
+- foot traffic
+- nearby competitors
+- average price per customer
+- expected daily customers
+- seating/service capacity
+- turnover rate
+- monthly fixed costs
+- staffing readiness
 
-## Key Guardrails
+## Active Execution Model
 
-- `diagnosis_sessions -> diagnosis_answers -> completed -> generateDiagnosisResult -> diagnosis_results -> dashboard` 흐름을 깨지 않습니다.
-- 결과 저장은 `persist_diagnosis_result` RPC를 사용합니다.
-- 자유입력 질문은 scoring하지 않습니다.
-- status mapping을 유지합니다.
-- 현재 실행 source of truth는 `result_actions`입니다.
-- `action_plans/action_tasks`를 active 구현처럼 다루지 않습니다.
+`result_actions` is the only active execution source of truth.
+
+- generated from `action_recommendations`
+- updated by users through status, note, and evidence fields
+- used by dashboard execution UI
+- used to derive the Primary Action
+
+## Active Result And Artifact Layers
+
+Core result persistence:
+
+- `persist_diagnosis_result`
+- `diagnosis_results`
+- `diagnosis_result_dimensions`
+
+Rule-based artifact persistence:
+
+- `diagnosis_result_issues`
+- `diagnosis_result_issue_causes`
+- `action_recommendations`
+
+## Guardrails
+
+- Keep `diagnosis_sessions -> diagnosis_answers -> completed -> generateDiagnosisResult -> diagnosis_results -> dashboard` intact
+- Keep `persist_diagnosis_result` as the result persistence path
+- Never score free-text questions
+- Keep `result_actions` as the only execution layer

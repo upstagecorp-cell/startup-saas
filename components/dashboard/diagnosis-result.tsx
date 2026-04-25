@@ -1,9 +1,18 @@
 import type { DiagnosisResultView } from "@/lib/diagnosis/results";
+import { PrimaryExecutionAction } from "@/components/dashboard/primary-execution-action";
 import { ResultActionsPanel } from "@/components/dashboard/result-actions-panel";
 import { createDiagnosisSession } from "@/app/dashboard/actions";
 
 interface DiagnosisResultProps {
   diagnosisResult: DiagnosisResultView;
+  usageGate: {
+    diagnosisCount: number;
+    diagnosisLimit: number;
+    actionCount: number;
+    actionLimit: number;
+    isDiagnosisLimitReached: boolean;
+    isActionLimitReached: boolean;
+  };
 }
 
 function formatScore(score: number | null) {
@@ -51,7 +60,43 @@ function formatDiff(diff: number | null) {
   return `${roundedDiff}`;
 }
 
-export function DiagnosisResult({ diagnosisResult }: DiagnosisResultProps) {
+function buildRediagnosisTriggerMessage(triggerReason: string | null) {
+  if (triggerReason === "completed_actions_count") {
+    return "실행 액션을 3개 이상 완료했습니다. 지금 재진단을 실행해 실제로 무엇이 달라졌는지 확인하세요.";
+  }
+
+  if (triggerReason === "last_completed_at_over_7_days") {
+    return "마지막 실행 완료 후 7일이 지났습니다. 지금 재진단을 실행해 다음 실행 우선순위를 다시 정하세요.";
+  }
+
+  return "실행 기록이 재진단을 진행할 만큼 쌓였습니다.";
+}
+
+function formatChangeLabel(change: "improved" | "unchanged" | "declined") {
+  if (change === "improved") {
+    return "상승";
+  }
+
+  if (change === "declined") {
+    return "하락";
+  }
+
+  return "유지";
+}
+
+function getChangeIndicatorClass(change: "improved" | "unchanged" | "declined") {
+  if (change === "improved") {
+    return "border-emerald-400/20 bg-emerald-500/10 text-emerald-100";
+  }
+
+  if (change === "declined") {
+    return "border-rose-400/20 bg-rose-500/10 text-rose-100";
+  }
+
+  return "border-white/10 bg-white/5 text-slate-200";
+}
+
+export function DiagnosisResult({ diagnosisResult, usageGate }: DiagnosisResultProps) {
   const issuesByDimensionKey = new Map(
     diagnosisResult.dimensions.map((dimension) => [
       dimension.dimension_key,
@@ -68,6 +113,15 @@ export function DiagnosisResult({ diagnosisResult }: DiagnosisResultProps) {
           <div className="rounded-3xl border border-white/10 bg-slate-950/60 p-5">
             <p className="text-xs uppercase tracking-[0.2em] text-slate-400">전체 점수</p>
             <p className="mt-3 text-3xl font-semibold text-white">{formatScore(diagnosisResult.result.overall_score)}</p>
+            {diagnosisResult.result.previous_score !== null ? (
+              <div
+                className={`mt-3 inline-flex rounded-full border px-3 py-1 text-xs font-medium ${getChangeIndicatorClass(
+                  diagnosisResult.result.change
+                )}`}
+              >
+                {formatChangeLabel(diagnosisResult.result.change)} {formatDiff(diagnosisResult.result.delta)}
+              </div>
+            ) : null}
           </div>
           <div className="rounded-3xl border border-white/10 bg-slate-950/60 p-5">
             <p className="text-xs uppercase tracking-[0.2em] text-slate-400">위험 단계</p>
@@ -84,6 +138,47 @@ export function DiagnosisResult({ diagnosisResult }: DiagnosisResultProps) {
         </div>
       </div>
 
+      {diagnosisResult.primary_action ? (
+        <PrimaryExecutionAction
+          action={diagnosisResult.primary_action}
+          actionLimitReached={usageGate.isActionLimitReached}
+          feedback={diagnosisResult.primary_action_feedback}
+        />
+      ) : null}
+
+      {diagnosisResult.feedback.should_trigger_rediagnosis ? (
+        <div className="rounded-[32px] border border-emerald-400/30 bg-emerald-500/15 p-8 shadow-soft">
+          <p className="text-sm font-medium uppercase tracking-[0.2em] text-emerald-200">Re-diagnosis Ready</p>
+          <h3 className="mt-3 text-2xl font-semibold text-white">다음 진단 사이클을 시작하세요.</h3>
+          <p className="mt-3 max-w-2xl text-sm leading-7 text-emerald-50">
+            {buildRediagnosisTriggerMessage(diagnosisResult.feedback.trigger_reason)}
+          </p>
+          {usageGate.isDiagnosisLimitReached ? (
+            <div className="mt-6 rounded-2xl border border-amber-400/20 bg-amber-500/10 p-5">
+              <p className="text-sm font-semibold text-amber-100">Upgrade required</p>
+              <p className="mt-2 text-sm leading-6 text-amber-50">
+                Free users can run {usageGate.diagnosisLimit} diagnosis. Upgrade to start another diagnosis.
+              </p>
+              <button
+                className="mt-4 rounded-full bg-amber-400 px-5 py-3 text-sm font-medium text-slate-950"
+                type="button"
+              >
+                Upgrade
+              </button>
+            </div>
+          ) : (
+            <form action={createDiagnosisSession} className="mt-6">
+              <button
+                className="rounded-full bg-emerald-500 px-5 py-3 text-sm font-medium text-white transition hover:bg-emerald-400"
+                type="submit"
+              >
+                재진단 시작
+              </button>
+            </form>
+          )}
+        </div>
+      ) : null}
+
       <div className="rounded-[32px] border border-white/10 bg-slate-900/80 p-8 shadow-soft backdrop-blur">
         <div className="flex flex-col gap-6 sm:flex-row sm:items-start sm:justify-between">
           <div>
@@ -93,16 +188,6 @@ export function DiagnosisResult({ diagnosisResult }: DiagnosisResultProps) {
               진단 결과가 실제 실행, 기록, 증거로 이어졌는지 확인하고 재진단이 필요한 시점을 판단합니다.
             </p>
           </div>
-          {diagnosisResult.feedback.should_show_rediagnosis_cta ? (
-            <form action={createDiagnosisSession}>
-              <button
-                className="rounded-full bg-brand-500 px-5 py-3 text-sm font-medium text-white transition hover:bg-brand-400"
-                type="submit"
-              >
-                재진단 시작
-              </button>
-            </form>
-          ) : null}
         </div>
 
         <div className="mt-6 grid gap-4 sm:grid-cols-4">
@@ -166,9 +251,9 @@ export function DiagnosisResult({ diagnosisResult }: DiagnosisResultProps) {
                 </div>
               </div>
               <div className="rounded-2xl border border-white/10 bg-white/5 p-4 text-sm leading-7 text-slate-300">
-                {diagnosisResult.feedback.should_show_rediagnosis_cta
+                {diagnosisResult.feedback.should_trigger_rediagnosis
                   ? "재진단을 진행할 만큼 실행 기록이 쌓였습니다."
-                  : "액션을 1개 이상 완료하거나 완료율 30%에 도달하면 재진단을 시작할 수 있습니다."}
+                  : "액션을 3개 이상 완료하거나 마지막 완료 후 7일이 지나면 재진단을 시작할 수 있습니다."}
               </div>
             </div>
           </div>
@@ -274,8 +359,19 @@ export function DiagnosisResult({ diagnosisResult }: DiagnosisResultProps) {
                   <h3 className="text-xl font-semibold text-white">{dimension.dimension_name}</h3>
                   <p className="mt-2 text-sm capitalize text-slate-400">{formatLabel(dimension.status)}</p>
                 </div>
-                <div className="rounded-full border border-white/10 px-4 py-2 text-sm font-medium text-white">
-                  점수 {formatScore(dimension.score)}
+                <div className="flex flex-wrap gap-2 sm:justify-end">
+                  <div className="rounded-full border border-white/10 px-4 py-2 text-sm font-medium text-white">
+                    점수 {formatScore(dimension.score)}
+                  </div>
+                  {dimension.previous_score !== null ? (
+                    <div
+                      className={`rounded-full border px-4 py-2 text-sm font-medium ${getChangeIndicatorClass(
+                        dimension.change
+                      )}`}
+                    >
+                      {formatChangeLabel(dimension.change)} {formatDiff(dimension.delta)}
+                    </div>
+                  ) : null}
                 </div>
               </div>
               <p className="mt-4 text-sm leading-7 text-slate-300">
@@ -361,7 +457,12 @@ export function DiagnosisResult({ diagnosisResult }: DiagnosisResultProps) {
         </div>
       </div>
 
-      <ResultActionsPanel actions={diagnosisResult.actions} feedback={diagnosisResult.feedback} />
+      <ResultActionsPanel
+        actionLimit={usageGate.actionLimit}
+        actionLimitReached={usageGate.isActionLimitReached}
+        actions={diagnosisResult.actions}
+        feedback={diagnosisResult.feedback}
+      />
     </div>
   );
 }

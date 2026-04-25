@@ -4,8 +4,10 @@ import { createDiagnosisSession } from "@/app/dashboard/actions";
 import { DiagnosisFlow } from "@/components/dashboard/diagnosis-flow";
 import { DiagnosisResult } from "@/components/dashboard/diagnosis-result";
 import { Container } from "@/components/ui/container";
+import { resolveBusinessTypeFromAnswers, resolveDiagnosisQuestions } from "@/lib/diagnosis/question-flow";
 import { getDiagnosisResult } from "@/lib/diagnosis/results";
 import { createSupabaseServerClient } from "@/lib/supabase/server";
+import { FREE_ACTION_LIMIT, FREE_DIAGNOSIS_LIMIT } from "@/lib/usage-limits";
 
 type SearchParams = Promise<{ session?: string }>;
 
@@ -29,6 +31,33 @@ export default async function DashboardPage({
   }
 
   const { session: sessionId } = await searchParams;
+  const { count: diagnosisCount, error: diagnosisCountError } = await supabase
+    .from("diagnosis_results")
+    .select("id", { count: "exact", head: true })
+    .eq("user_id", user.id);
+
+  if (diagnosisCountError) {
+    throw new Error("Diagnosis usage could not be loaded.");
+  }
+
+  const { count: activeActionCount, error: activeActionCountError } = await supabase
+    .from("result_actions")
+    .select("id", { count: "exact", head: true })
+    .eq("user_id", user.id)
+    .neq("status", "todo");
+
+  if (activeActionCountError) {
+    throw new Error("Action usage could not be loaded.");
+  }
+
+  const usageGate = {
+    diagnosisCount: diagnosisCount ?? 0,
+    diagnosisLimit: FREE_DIAGNOSIS_LIMIT,
+    actionCount: activeActionCount ?? 0,
+    actionLimit: FREE_ACTION_LIMIT,
+    isDiagnosisLimitReached: (diagnosisCount ?? 0) >= FREE_DIAGNOSIS_LIMIT,
+    isActionLimitReached: (activeActionCount ?? 0) >= FREE_ACTION_LIMIT
+  };
 
   const { data: activeTemplate, error: templateError } = await supabase
     .from("diagnosis_templates")
@@ -92,6 +121,14 @@ export default async function DashboardPage({
   const orderedQuestions = questions
     .slice()
     .sort((left, right) => {
+      if (left.question_code === "business_type") {
+        return -1;
+      }
+
+      if (right.question_code === "business_type") {
+        return 1;
+      }
+
       const leftSection = sections.find((section) => section.id === left.section_id)?.sort_order ?? 0;
       const rightSection = sections.find((section) => section.id === right.section_id)?.sort_order ?? 0;
 
@@ -124,6 +161,35 @@ export default async function DashboardPage({
     throw new Error("기존 답변을 불러오지 못했습니다.");
   }
 
+  const businessType = resolveBusinessTypeFromAnswers(
+    questions.map((question) => ({
+      id: question.id,
+      questionCode: question.question_code,
+      answerSchema:
+        question.answer_schema && typeof question.answer_schema === "object" ? question.answer_schema : null
+    })),
+    new Map(
+      (answers ?? []).map((answer) => [
+        answer.question_id,
+        {
+          questionId: answer.question_id,
+          answerText: answer.answer_text
+        }
+      ])
+    )
+  );
+  const visibleQuestionIds = new Set(
+    resolveDiagnosisQuestions(
+      orderedQuestions.map((question) => ({
+        id: question.id,
+        questionCode: question.questionCode,
+        answerSchema: question.answerSchema
+      })),
+      businessType
+    ).map((question) => question.id)
+  );
+  const filteredOrderedQuestions = orderedQuestions.filter((question) => visibleQuestionIds.has(question.id));
+
   const diagnosisResult =
     diagnosisSession?.status === "completed" ? await getDiagnosisResult(diagnosisSession.id) : null;
 
@@ -144,7 +210,7 @@ export default async function DashboardPage({
       <div className="mx-auto mt-8 max-w-3xl">
         {diagnosisSession ? (
           diagnosisSession.status === "completed" && diagnosisResult ? (
-            <DiagnosisResult diagnosisResult={diagnosisResult} />
+            <DiagnosisResult diagnosisResult={diagnosisResult} usageGate={usageGate} />
           ) : (
             <DiagnosisFlow
               answers={
@@ -156,7 +222,7 @@ export default async function DashboardPage({
                 })) ?? []
               }
               initialStatus={diagnosisSession.status}
-              questions={orderedQuestions}
+              questions={filteredOrderedQuestions}
               sessionId={diagnosisSession.id}
             />
           )
@@ -167,14 +233,29 @@ export default async function DashboardPage({
             <p className="mt-4 text-sm leading-7 text-slate-300">
               버튼을 누르면 새 진단 세션을 생성하고, 질문을 한 개씩 표시합니다.
             </p>
-            <form action={createDiagnosisSession} className="mt-8">
-              <button
-                className="rounded-full bg-brand-500 px-5 py-3 text-sm font-medium text-white transition hover:bg-brand-400"
-                type="submit"
-              >
-                진단 시작
-              </button>
-            </form>
+            {usageGate.isDiagnosisLimitReached ? (
+              <div className="mt-8 rounded-2xl border border-amber-400/20 bg-amber-500/10 p-5">
+                <p className="text-sm font-semibold text-amber-100">Upgrade required</p>
+                <p className="mt-2 text-sm leading-6 text-amber-50">
+                  Free users can run {usageGate.diagnosisLimit} diagnosis. Upgrade to start another diagnosis.
+                </p>
+                <button
+                  className="mt-4 rounded-full bg-amber-400 px-5 py-3 text-sm font-medium text-slate-950"
+                  type="button"
+                >
+                  Upgrade
+                </button>
+              </div>
+            ) : (
+              <form action={createDiagnosisSession} className="mt-8">
+                <button
+                  className="rounded-full bg-brand-500 px-5 py-3 text-sm font-medium text-white transition hover:bg-brand-400"
+                  type="submit"
+                >
+                  진단 시작
+                </button>
+              </form>
+            )}
           </div>
         )}
       </div>

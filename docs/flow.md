@@ -1,171 +1,68 @@
 # Current MVP Flow
 
-이 문서는 현재 구현된 사용자/서버/DB 흐름만 설명합니다.
+현재 실제 동작 기준.
 
-## Implemented
-
-### 1. Authentication
+## 1. Login
 
 ```text
 /signup or /login
 -> Supabase Auth
--> session cookie
--> /dashboard access
+-> /dashboard
 ```
 
-`/dashboard`는 로그인 사용자만 접근할 수 있습니다.
-
-### 2. Start Diagnosis
+## 2. Diagnosis
 
 ```text
-Dashboard start button
--> createDiagnosisSession()
--> active founder_diagnosis template lookup
--> diagnosis_sessions insert
--> redirect /dashboard?session={sessionId}
-```
-
-### 3. Answer Questions
-
-```text
-DiagnosisFlow
--> submitDiagnosisAnswer()
--> build answer payload by question_type
+dashboard start
+-> diagnosis_sessions 생성
+-> business_type 선택
+-> 분기된 질문 답변 저장
 -> diagnosis_answers upsert
--> count active questions
--> count saved answers
 ```
 
-question type 처리:
+자유 입력:
 
-- `boolean`: `answer_boolean`
-- `number`, `scale`: `answer_number`
-- 나머지 선택/텍스트: `answer_text`
+- `short_text`, `long_text`는 `answer_text`로 저장
+- 점수 계산에서 제외
 
-### 4. Complete Session
-
-모든 active 질문에 답변하면:
+## 3. Result
 
 ```text
-diagnosis_sessions.status = completed
-diagnosis_sessions.completed_at = now
-generateDiagnosisResult(sessionId)
+모든 필수 질문 답변
+-> diagnosis_sessions completed
+-> generateDiagnosisResult()
+-> diagnosis_results 생성
+-> diagnosis_result_dimensions 생성
 ```
 
-### 5. Generate Core Result
+## 4. Recommendation And Action
 
 ```text
-load session
--> load sections
--> load questions
--> load answers
--> calculate question scores
--> calculate section scores
--> calculate overall score/status
--> persist_diagnosis_result RPC
+추천 생성 시도
+-> 추천이 없으면 fallback recommendation 강제 생성
+-> result_actions 생성
 ```
 
-`short_text`와 `long_text`는 scoring하지 않습니다.
+보장:
 
-### 6. Generate Issues, Causes, Recommendations
+- `action_recommendations` 최소 1개
+- `result_actions` 최소 1개
 
-```text
-generateAndPersistDiagnosisArtifacts()
--> load issue definitions
--> load cause definitions
--> load action templates
--> match rules by dimension score/status
--> persist_diagnosis_artifacts RPC
-```
+## 5. Dashboard Execution
 
-생성 대상:
+dashboard 표시:
 
-- `diagnosis_result_issues`
-- `diagnosis_result_issue_causes`
-- `action_recommendations`
-
-schema/seed/RPC가 없으면 skip-safe로 동작하며 core result display는 유지됩니다.
-
-### 7. Generate Result Actions
-
-```text
-generateResultActionsFromRecommendations()
--> load action_recommendations
--> create result_actions
-```
-
-현재 MVP의 실행 액션은 `result_actions`입니다.
-
-### 8. Display Result
-
-```text
-getDiagnosisResult(sessionId)
--> diagnosis_results
--> diagnosis_result_dimensions
--> diagnosis_result_issues
--> diagnosis_result_issue_causes
--> action_recommendations
--> result_actions
--> recent results for comparison
-```
-
-대시보드 표시 항목:
-
-- 전체 점수
-- 위험 단계
-- 다음 실행
-- 영역별 점수/status/summary
-- 문제/원인
+- 진단 결과
 - 추천 실행 액션
-- 이번 주 실행 목록
-- 실행 메모/evidence
-- 재진단 비교
+- Primary Action
+- 실행 상태
+- 메모
+- 증거 링크
 
-### 9. Update Execution Action
-
-```text
-ResultActionsPanel
--> updateResultAction()
--> result_actions update
--> revalidate /dashboard
-```
-
-상태:
-
-- `todo`
-- `doing`
-- `done`
-
-기록:
-
-- `note`
-- `evidence_url`
-
-### 10. Re-diagnosis Comparison
-
-결과 조회 시 최근 결과를 함께 로드합니다.
+## 6. Re-diagnosis
 
 ```text
-current result
--> previous result
--> overall score diff
--> dimension score diff
--> improved / unchanged / declined
+실행 기록
+-> 재진단
+-> 이전 결과와 현재 결과 비교
 ```
-
-## Not Implemented Yet
-
-- 결제
-- paid gate
-- plan-based execution page
-- `action_plans/action_tasks` 기반 task flow
-- admin review
-- coach notes
-- template asset delivery
-- analytics funnel tracking
-
-## Important Constraint
-
-현재 active execution layer는 `result_actions`입니다.
-
-`action_plans/action_tasks`는 schema에는 존재하지만 현재 MVP flow에는 연결되어 있지 않습니다.

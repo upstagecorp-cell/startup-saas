@@ -142,6 +142,10 @@ function readRequired(answerSchema: Record<string, unknown> | null, fallback: bo
   return fallback;
 }
 
+function readScoringExcluded(answerSchema: Record<string, unknown> | null) {
+  return answerSchema?.scoring_excluded === true;
+}
+
 function asNumber(value: unknown, keyName: string) {
   if (typeof value !== "number") {
     return null;
@@ -204,6 +208,14 @@ export function calculateQuestionScore(
   };
 
   if (question.questionType === "short_text" || question.questionType === "long_text") {
+    return {
+      ...baseResult,
+      score: null,
+      scorable: false
+    };
+  }
+
+  if (readScoringExcluded(question.answerSchema)) {
     return {
       ...baseResult,
       score: null,

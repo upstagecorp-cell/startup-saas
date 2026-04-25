@@ -6,6 +6,8 @@ import { updateResultAction } from "@/app/dashboard/actions";
 import type { ResultActionFeedbackSummary, ResultActionView } from "@/lib/diagnosis/result-actions";
 
 interface ResultActionsPanelProps {
+  actionLimit: number;
+  actionLimitReached: boolean;
   actions: ResultActionView[];
   feedback: ResultActionFeedbackSummary;
 }
@@ -27,7 +29,7 @@ function formatLabel(value: string | null) {
   return labels[value] ?? value.replace(/_/g, " ");
 }
 
-export function ResultActionsPanel({ actions, feedback }: ResultActionsPanelProps) {
+export function ResultActionsPanel({ actionLimit, actionLimitReached, actions, feedback }: ResultActionsPanelProps) {
   const [notesByActionId, setNotesByActionId] = useState<Record<string, string>>(() =>
     Object.fromEntries(actions.map((action) => [action.id, action.note ?? ""]))
   );
@@ -87,10 +89,26 @@ export function ResultActionsPanel({ actions, feedback }: ResultActionsPanelProp
 
       {error ? <p className="mt-5 text-sm text-rose-300">{error}</p> : null}
 
+      {actionLimitReached ? (
+        <div className="mt-5 rounded-2xl border border-amber-400/20 bg-amber-500/10 p-5">
+          <p className="text-sm font-semibold text-amber-100">Upgrade required</p>
+          <p className="mt-2 text-sm leading-6 text-amber-50">
+            Free users can execute {actionLimit} actions. Upgrade to continue with additional actions.
+          </p>
+          <button
+            className="mt-4 rounded-full bg-amber-400 px-5 py-3 text-sm font-medium text-slate-950"
+            type="button"
+          >
+            Upgrade
+          </button>
+        </div>
+      ) : null}
+
       <div className="mt-6 space-y-4">
         {actions.length ? (
           actions.map((action) => {
             const isCurrentActionPending = isPending && pendingActionId === action.id;
+            const isActionBlocked = actionLimitReached && action.status === "todo";
 
             return (
               <div key={action.id} className="rounded-3xl border border-white/10 bg-slate-950/70 p-6">
@@ -149,7 +167,7 @@ export function ResultActionsPanel({ actions, feedback }: ResultActionsPanelProp
                   {action.status === "todo" ? (
                     <button
                       className="rounded-full bg-brand-500 px-5 py-3 text-sm font-medium text-white transition hover:bg-brand-400 disabled:opacity-60"
-                      disabled={isCurrentActionPending}
+                      disabled={isCurrentActionPending || isActionBlocked}
                       onClick={() => submitAction(action.id, "doing")}
                       type="button"
                     >
